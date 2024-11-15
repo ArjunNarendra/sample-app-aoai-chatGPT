@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from abc import ABC, abstractmethod
+from pathlib import Path
 from pydantic import (
     BaseModel,
     confloat,
@@ -15,6 +16,7 @@ from pydantic import (
     ValidationInfo
 )
 from pydantic.alias_generators import to_snake
+from pydantic_core import InitErrorDetails
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Literal, Optional
 from typing_extensions import Self
@@ -30,6 +32,7 @@ DOTENV_PATH = os.environ.get(
         ".env"
     )
 )
+
 MINIMUM_SUPPORTED_AZURE_OPENAI_PREVIEW_API_VERSION = "2024-05-01-preview"
 
 
@@ -101,12 +104,12 @@ class _AzureOpenAISettings(BaseSettings):
         env_ignore_empty=True
     )
     
-    model: str
-    key: Optional[str] = None
-    resource: Optional[str] = None
-    endpoint: Optional[str] = None
+    model: Optional[str] = "gpt-4o"
+    key: Optional[str] = ""
+    resource: Optional[str] = "openai-for-web-app-2"
+    endpoint: Optional[str] = "https://openai-for-web-app-2.openai.azure.com/"
     temperature: float = 0
-    top_p: float = 0
+    top_p: float = 1
     max_tokens: int = 1000
     stream: bool = True
     stop_sequence: Optional[List[str]] = None
@@ -122,7 +125,7 @@ class _AzureOpenAISettings(BaseSettings):
     preview_api_version: str = MINIMUM_SUPPORTED_AZURE_OPENAI_PREVIEW_API_VERSION
     embedding_endpoint: Optional[str] = None
     embedding_key: Optional[str] = None
-    embedding_name: Optional[str] = None
+    embedding_name: Optional[str] = "text-embedding-ada-002"
     
     @field_validator('tools', mode='before')
     @classmethod
@@ -160,6 +163,9 @@ class _AzureOpenAISettings(BaseSettings):
     
     @model_validator(mode="after")
     def ensure_endpoint(self) -> Self:
+        print("HELLO")
+        print(self.endpoint)
+        
         if self.endpoint:
             return Self
         
@@ -167,7 +173,14 @@ class _AzureOpenAISettings(BaseSettings):
             self.endpoint = f"https://{self.resource}.openai.azure.com"
             return Self
         
-        raise ValidationError("AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_RESOURCE is required")
+        validation_errors = []
+        validation_errors.append(
+               InitErrorDetails(
+                  type="missing",
+                  input="AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_RESOURCE",
+               ))
+        
+        raise ValidationError.from_exception_data(title="OpenAI Access", line_errors=validation_errors)
         
     def extract_embedding_dependency(self) -> Optional[dict]:
         if self.embedding_name:
@@ -249,17 +262,17 @@ class _AzureSearchSettings(BaseSettings, DatasourcePayloadConstructor):
     top_k: int = Field(default=5, serialization_alias="top_n_documents")
     strictness: int = 3
     enable_in_domain: bool = Field(default=True, serialization_alias="in_scope")
-    service: str = Field(exclude=True)
+    service: str = Field(default="search-for-web-app", exclude=True)
     endpoint_suffix: str = Field(default="search.windows.net", exclude=True)
-    index: str = Field(serialization_alias="index_name")
-    key: Optional[str] = Field(default=None, exclude=True)
-    use_semantic_search: bool = Field(default=False, exclude=True)
-    semantic_search_config: str = Field(default="", serialization_alias="semantic_configuration")
-    content_columns: Optional[List[str]] = Field(default=None, exclude=True)
+    index: str = Field(default="stuff-index", serialization_alias="index_name")
+    key: Optional[str] = Field(default="", exclude=True)
+    use_semantic_search: bool = Field(default=True, exclude=True)
+    semantic_search_config: str = Field(default="default", serialization_alias="semantic_configuration")
+    content_columns: Optional[List[str]] = Field(default=["content", "filepath"], exclude=True)
     vector_columns: Optional[List[str]] = Field(default=None, exclude=True)
-    title_column: Optional[str] = Field(default=None, exclude=True)
-    url_column: Optional[str] = Field(default=None, exclude=True)
-    filename_column: Optional[str] = Field(default=None, exclude=True)
+    title_column: Optional[str] = Field(default="title", exclude=True)
+    url_column: Optional[str] = Field(default="url", exclude=True)
+    filename_column: Optional[str] = Field(default="filepath", exclude=True)
     query_type: Literal[
         'simple',
         'vector',
@@ -268,11 +281,11 @@ class _AzureSearchSettings(BaseSettings, DatasourcePayloadConstructor):
         'vectorSimpleHybrid',
         'vector_semantic_hybrid',
         'vectorSemanticHybrid'
-    ] = "simple"
+    ] = "vector_simple_hybrid"
     permitted_groups_column: Optional[str] = Field(default=None, exclude=True)
     
     # Constructed fields
-    endpoint: Optional[str] = None
+    endpoint: Optional[str] = "https://search-for-web-app.search.windows.net"
     authentication: Optional[dict] = None
     embedding_dependency: Optional[dict] = None
     fields_mapping: Optional[dict] = None
@@ -752,7 +765,7 @@ class _BaseSettings(BaseSettings):
         arbitrary_types_allowed=True,
         env_ignore_empty=True
     )
-    datasource_type: Optional[str] = None
+    datasource_type: Optional[str] = "AzureCognitiveSearch"
     auth_enabled: bool = True
     sanitize_answer: bool = False
     use_promptflow: bool = False
